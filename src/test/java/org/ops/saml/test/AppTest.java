@@ -122,11 +122,17 @@ public class AppTest
 
           XMLObjectBuilderFactory builderFactory = Configuration.getBuilderFactory();
 
-
           // AuthnRequest
           SAMLObjectBuilder authnRequestBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(AuthnRequest.DEFAULT_ELEMENT_NAME);
           AuthnRequest authnRequest = (AuthnRequest) authnRequestBuilder.buildObject();
-          
+         
+          // Issuer
+          SAMLObjectBuilder issuerBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(Issuer.DEFAULT_ELEMENT_NAME);
+          Issuer issuer = (Issuer) issuerBuilder.buildObject();
+          issuer.setValue("https://account.htc.com/service/saml2/");
+	  
+	  authnRequest.setIssuer(issuer);
+
           AuthnRequestMarshaller marshaller = new AuthnRequestMarshaller();
 
           try {
@@ -153,7 +159,7 @@ public class AppTest
           SAMLObjectBuilder nameIdBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(NameID.DEFAULT_ELEMENT_NAME);
           NameID nameId = (NameID) nameIdBuilder.buildObject();
           nameId.setValue(accountId);
-          nameId.setNameQualifier("com.htc.account");
+          nameId.setNameQualifier("account.htc.com");
           nameId.setFormat(NameID.UNSPECIFIED);
 
           // SubjectConfirmation
@@ -234,6 +240,30 @@ public class AppTest
               attrStatement.getAttributes().add(attr);
           }
          
+          // .. Country
+          {
+              Attribute attr = (Attribute) attrBuilder.buildObject();
+              attr.setName("Country");
+
+              XSString value = (XSString) stringBuilder.buildObject(AttributeValue.DEFAULT_ELEMENT_NAME, XSString.TYPE_NAME);
+              value.setValue("US");
+
+              attr.getAttributeValues().add(value);
+              attrStatement.getAttributes().add(attr);
+          }
+         
+          // .. Language
+          {
+              Attribute attr = (Attribute) attrBuilder.buildObject();
+              attr.setName("Language");
+
+              XSString value = (XSString) stringBuilder.buildObject(AttributeValue.DEFAULT_ELEMENT_NAME, XSString.TYPE_NAME);
+              value.setValue("en_US");
+
+              attr.getAttributeValues().add(value);
+              attrStatement.getAttributes().add(attr);
+          }
+         
           // Conditions
           SAMLObjectBuilder conditionsBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(Conditions.DEFAULT_ELEMENT_NAME);
           Conditions conditions = (Conditions) conditionsBuilder.buildObject();
@@ -247,7 +277,7 @@ public class AppTest
           // Issuer
           SAMLObjectBuilder issuerBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(Issuer.DEFAULT_ELEMENT_NAME);
           Issuer issuer = (Issuer) issuerBuilder.buildObject();
-          issuer.setValue("com.htc.identity");
+          issuer.setValue("https://account.htc.com/service/saml2/");
 
           // Assertion
           SAMLObjectBuilder assertionBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(Assertion.DEFAULT_ELEMENT_NAME);
