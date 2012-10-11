@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Date;
 import java.util.UUID;
+import java.security.KeyPair;
 
 import junit.framework.Test;
 import junit.framework.TestCase;
@@ -51,9 +52,19 @@ import org.opensaml.saml2.core.impl.ResponseMarshaller;
 import org.opensaml.xml.ConfigurationException;
 import org.opensaml.xml.XMLObjectBuilder;
 import org.opensaml.xml.XMLObjectBuilderFactory;
+
+import org.opensaml.xml.io.MarshallerFactory;
 import org.opensaml.xml.io.MarshallingException;
 import org.opensaml.xml.schema.XSString;
 import org.opensaml.xml.util.XMLHelper;
+
+//import org.opensaml.xml.security.SecurityException;
+import org.opensaml.xml.security.SecurityHelper;
+import org.opensaml.xml.security.SecurityTestHelper;
+import org.opensaml.xml.security.credential.Credential;
+import org.opensaml.xml.signature.Signature;
+import org.opensaml.xml.signature.Signer;
+
 
 import org.w3c.dom.*;
 import org.w3c.dom.Element;
@@ -124,6 +135,7 @@ public class AppTest
           DateTime now = new DateTime();
 
           XMLObjectBuilderFactory builderFactory = Configuration.getBuilderFactory();
+          MarshallerFactory marshallerFactory = Configuration.getMarshallerFactory();
 
           // AuthnRequest
           SAMLObjectBuilder<AuthnRequest> authnRequestBuilder = (SAMLObjectBuilder<AuthnRequest>) builderFactory.getBuilder(AuthnRequest.DEFAULT_ELEMENT_NAME);
@@ -158,15 +170,36 @@ public class AppTest
           authnRequest.setScoping(scoping);
           authnRequest.setProtocolBinding("urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST");
 
-          AuthnRequestMarshaller marshaller = new AuthnRequestMarshaller();
+          // Signature
+          XMLObjectBuilder signatureBuilder = builderFactory.getBuilder(Signature.DEFAULT_ELEMENT_NAME);
+          Signature signature = (Signature) signatureBuilder.buildObject(Signature.DEFAULT_ELEMENT_NAME);
 
+          // .. generate key-pair for signing
           try {
-            Element plaintextElement = marshaller.marshall(authnRequest);
-            String originalAuthnRequestString = XMLHelper.nodeToString(plaintextElement);
-            System.out.println("AuthnRequest String: " + originalAuthnRequestString);
-          } catch (MarshallingException e) {
+            KeyPair keyPair = SecurityTestHelper.generateKeyPair("RSA", 1024, null);
+            // .. generate credential
+            Credential credential = SecurityHelper.getSimpleCredential(keyPair.getPublic(), keyPair.getPrivate());
+
+            signature.setSigningCredential(credential);
+            authnRequest.setSignature(signature);
+
+            SecurityHelper.prepareSignatureParams(signature, credential, null, null);
+            marshallerFactory.getMarshaller(authnRequest).marshall(authnRequest);
+            Signer.signObject(signature);
+
+            AuthnRequestMarshaller marshaller = new AuthnRequestMarshaller();
+  
+            try {
+              Element plaintextElement = marshaller.marshall(authnRequest);
+              String originalAuthnRequestString = XMLHelper.nodeToString(plaintextElement);
+              System.out.println("AuthnRequest String: " + originalAuthnRequestString);
+            } catch (MarshallingException e) {
+              System.out.println("Exception: " + e.toString());
+            }
+          } catch (Exception e) {
             System.out.println("Exception: " + e.toString());
           }
+
 
           assertTrue(true);
          
