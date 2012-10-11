@@ -13,18 +13,6 @@ import junit.framework.TestSuite;
 
 import static org.mockito.Mockito.*;
 
-import org.opensaml.DefaultBootstrap;
-import org.opensaml.Configuration;
-import org.opensaml.common.SAMLObjectBuilder;
-import org.opensaml.xml.XMLObjectBuilderFactory;
-import org.opensaml.saml2.core.*;
-import org.opensaml.saml2.common.*;
-import org.opensaml.saml2.core.impl.*;
-
-import org.w3c.dom.*;
-
-import org.opensaml.xml.*;
-
 import org.joda.time.DateTime;
 import org.opensaml.Configuration;
 import org.opensaml.DefaultBootstrap;
@@ -37,7 +25,13 @@ import org.opensaml.saml2.core.AttributeValue;
 import org.opensaml.saml2.core.AuthnContext;
 import org.opensaml.saml2.core.AuthnContextClassRef;
 import org.opensaml.saml2.core.AuthnStatement;
+import org.opensaml.saml2.core.AuthnRequest;
+import org.opensaml.saml2.core.Scoping;
+
 import org.opensaml.saml2.core.Condition;
+import org.opensaml.saml2.core.IDPList;
+import org.opensaml.saml2.core.IDPEntry;
+
 import org.opensaml.saml2.core.Conditions;
 import org.opensaml.saml2.core.Issuer;
 import org.opensaml.saml2.core.NameID;
@@ -45,15 +39,24 @@ import org.opensaml.saml2.core.OneTimeUse;
 import org.opensaml.saml2.core.Subject;
 import org.opensaml.saml2.core.SubjectConfirmation;
 import org.opensaml.saml2.core.SubjectConfirmationData;
+import org.opensaml.saml2.core.Status;
+import org.opensaml.saml2.core.StatusCode;
+import org.opensaml.saml2.core.Response;
+
 import org.opensaml.saml2.core.impl.AssertionMarshaller;
+import org.opensaml.saml2.core.impl.AuthnRequestMarshaller;
+import org.opensaml.saml2.core.impl.ResponseMarshaller;
+
+
 import org.opensaml.xml.ConfigurationException;
 import org.opensaml.xml.XMLObjectBuilder;
 import org.opensaml.xml.XMLObjectBuilderFactory;
 import org.opensaml.xml.io.MarshallingException;
 import org.opensaml.xml.schema.XSString;
 import org.opensaml.xml.util.XMLHelper;
-import org.w3c.dom.Element;
 
+import org.w3c.dom.*;
+import org.w3c.dom.Element;
 
 /**
  * Unit test for simple App.
@@ -123,15 +126,37 @@ public class AppTest
           XMLObjectBuilderFactory builderFactory = Configuration.getBuilderFactory();
 
           // AuthnRequest
-          SAMLObjectBuilder authnRequestBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(AuthnRequest.DEFAULT_ELEMENT_NAME);
-          AuthnRequest authnRequest = (AuthnRequest) authnRequestBuilder.buildObject();
-         
+          SAMLObjectBuilder<AuthnRequest> authnRequestBuilder = (SAMLObjectBuilder<AuthnRequest>) builderFactory.getBuilder(AuthnRequest.DEFAULT_ELEMENT_NAME);
+          AuthnRequest authnRequest = authnRequestBuilder.buildObject();
+
+          // Scoping
+          SAMLObjectBuilder<Scoping> scopingBuilder = (SAMLObjectBuilder<Scoping>) builderFactory.getBuilder(Scoping.DEFAULT_ELEMENT_NAME);
+          Scoping scoping = scopingBuilder.buildObject();
+
+          // .. IDPList
+          SAMLObjectBuilder<IDPList> idpListBuilder = (SAMLObjectBuilder<IDPList>) builderFactory.getBuilder(IDPList.DEFAULT_ELEMENT_NAME);
+          IDPList idpList = idpListBuilder.buildObject();
+          
+          // .. IDPEntry
+          SAMLObjectBuilder<IDPEntry> idpEntryBuilder = (SAMLObjectBuilder<IDPEntry>) builderFactory.getBuilder(IDPEntry.DEFAULT_ELEMENT_NAME);
+          IDPEntry idpEntry = idpEntryBuilder.buildObject();
+          idpEntry.setName("account.htc.com");
+          idpEntry.setProviderID("account.htc.com");
+
+          idpList.getIDPEntrys().add(idpEntry);
+          scoping.setIDPList(idpList);
+            
           // Issuer
-          SAMLObjectBuilder issuerBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(Issuer.DEFAULT_ELEMENT_NAME);
-          Issuer issuer = (Issuer) issuerBuilder.buildObject();
+          SAMLObjectBuilder<Issuer> issuerBuilder = (SAMLObjectBuilder<Issuer>) builderFactory.getBuilder(Issuer.DEFAULT_ELEMENT_NAME);
+          Issuer issuer = issuerBuilder.buildObject();
           issuer.setValue("https://account.htc.com/service/saml2/");
-	  
-	  authnRequest.setIssuer(issuer);
+	 
+          authnRequest.setID(UUID.randomUUID().toString());
+          authnRequest.setIssuer(issuer);
+          authnRequest.setIsPassive(true);
+          authnRequest.setProviderName("support.htc.com");
+          authnRequest.setScoping(scoping);
+          authnRequest.setProtocolBinding("urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST");
 
           AuthnRequestMarshaller marshaller = new AuthnRequestMarshaller();
 
