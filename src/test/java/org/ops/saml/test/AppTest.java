@@ -6,19 +6,36 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Date;
 import java.util.UUID;
+import java.net.URL;
 import java.security.KeyPair;
 
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
 
+import javax.xml.namespace.QName;
+
 import static org.mockito.Mockito.*;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 import org.joda.time.DateTime;
 import org.opensaml.Configuration;
 import org.opensaml.DefaultBootstrap;
+import org.opensaml.xml.XMLObject;
+import org.opensaml.xml.XMLObjectBuilder;
+
 import org.opensaml.common.SAMLObjectBuilder;
 import org.opensaml.common.SAMLVersion;
+import org.opensaml.common.binding.BasicSAMLMessageContext;
+
+import org.opensaml.saml2.metadata.Endpoint;
+import org.opensaml.saml2.metadata.AssertionConsumerService;
+import org.opensaml.ws.transport.http.HTTPTransportUtils;
+import org.opensaml.ws.transport.http.HttpServletResponseAdapter;
+
+
+import org.opensaml.saml2.binding.encoding.HTTPRedirectDeflateEncoder;
+
 import org.opensaml.saml2.core.Assertion;
 import org.opensaml.saml2.core.Attribute;
 import org.opensaml.saml2.core.AttributeStatement;
@@ -130,28 +147,33 @@ public class AppTest
           assertTrue(true);
      }
 
-     public void testRequest()
+     private XMLObject buildObject(QName objectQName)
+     {
+         XMLObjectBuilder builder = Configuration.getBuilderFactory().getBuilder(objectQName);
+	 if (builder != null) {
+	     return builder.buildObject(objectQName.getNamespaceURI(), objectQName.getLocalPart(), objectQName.getPrefix()); 
+         } else {
+             return null;
+	 }
+     }
+
+     public void testRequest() throws java.lang.Exception
      {
           DateTime now = new DateTime();
 
-          XMLObjectBuilderFactory builderFactory = Configuration.getBuilderFactory();
           MarshallerFactory marshallerFactory = Configuration.getMarshallerFactory();
 
           // AuthnRequest
-          SAMLObjectBuilder<AuthnRequest> authnRequestBuilder = (SAMLObjectBuilder<AuthnRequest>) builderFactory.getBuilder(AuthnRequest.DEFAULT_ELEMENT_NAME);
-          AuthnRequest authnRequest = authnRequestBuilder.buildObject();
+          AuthnRequest authnRequest = (AuthnRequest) buildObject(AuthnRequest.DEFAULT_ELEMENT_NAME);
 
           // Scoping
-          SAMLObjectBuilder<Scoping> scopingBuilder = (SAMLObjectBuilder<Scoping>) builderFactory.getBuilder(Scoping.DEFAULT_ELEMENT_NAME);
-          Scoping scoping = scopingBuilder.buildObject();
+          Scoping scoping = (Scoping) buildObject(Scoping.DEFAULT_ELEMENT_NAME);
 
           // .. IDPList
-          SAMLObjectBuilder<IDPList> idpListBuilder = (SAMLObjectBuilder<IDPList>) builderFactory.getBuilder(IDPList.DEFAULT_ELEMENT_NAME);
-          IDPList idpList = idpListBuilder.buildObject();
+          IDPList idpList = (IDPList) buildObject(IDPList.DEFAULT_ELEMENT_NAME);
           
           // .. IDPEntry
-          SAMLObjectBuilder<IDPEntry> idpEntryBuilder = (SAMLObjectBuilder<IDPEntry>) builderFactory.getBuilder(IDPEntry.DEFAULT_ELEMENT_NAME);
-          IDPEntry idpEntry = idpEntryBuilder.buildObject();
+	  IDPEntry idpEntry = (IDPEntry) buildObject(IDPEntry.DEFAULT_ELEMENT_NAME);
           idpEntry.setName("account.htc.com");
           idpEntry.setProviderID("account.htc.com");
 
@@ -159,11 +181,11 @@ public class AppTest
           scoping.setIDPList(idpList);
             
           // Issuer
-          SAMLObjectBuilder<Issuer> issuerBuilder = (SAMLObjectBuilder<Issuer>) builderFactory.getBuilder(Issuer.DEFAULT_ELEMENT_NAME);
-          Issuer issuer = issuerBuilder.buildObject();
+          Issuer issuer = (Issuer) buildObject(Issuer.DEFAULT_ELEMENT_NAME);
           issuer.setValue("https://account.htc.com/service/saml2/");
 	 
           authnRequest.setID(UUID.randomUUID().toString());
+          authnRequest.setVersion(SAMLVersion.VERSION_20);
           authnRequest.setIssuer(issuer);
           authnRequest.setIsPassive(true);
           authnRequest.setProviderName("support.htc.com");
@@ -171,38 +193,97 @@ public class AppTest
           authnRequest.setProtocolBinding("urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST");
 
           // Signature
-          XMLObjectBuilder signatureBuilder = builderFactory.getBuilder(Signature.DEFAULT_ELEMENT_NAME);
-          Signature signature = (Signature) signatureBuilder.buildObject(Signature.DEFAULT_ELEMENT_NAME);
+          Signature signature = (Signature) buildObject(Signature.DEFAULT_ELEMENT_NAME);
 
           // .. generate key-pair for signing
-          try {
-            KeyPair keyPair = SecurityTestHelper.generateKeyPair("RSA", 1024, null);
-            // .. generate credential
-            Credential credential = SecurityHelper.getSimpleCredential(keyPair.getPublic(), keyPair.getPrivate());
+          KeyPair keyPair = SecurityTestHelper.generateKeyPair("RSA", 2048, null);
 
-            signature.setSigningCredential(credential);
-            authnRequest.setSignature(signature);
+	  // .. generate credential
+          Credential credential = SecurityHelper.getSimpleCredential(keyPair.getPublic(), keyPair.getPrivate());
 
-            SecurityHelper.prepareSignatureParams(signature, credential, null, null);
-            marshallerFactory.getMarshaller(authnRequest).marshall(authnRequest);
-            Signer.signObject(signature);
+          signature.setSigningCredential(credential);
+          authnRequest.setSignature(signature);
 
-            AuthnRequestMarshaller marshaller = new AuthnRequestMarshaller();
-  
-            try {
-              Element plaintextElement = marshaller.marshall(authnRequest);
-              String originalAuthnRequestString = XMLHelper.nodeToString(plaintextElement);
-              System.out.println("AuthnRequest String: " + originalAuthnRequestString);
-            } catch (MarshallingException e) {
-              System.out.println("Exception: " + e.toString());
-            }
-          } catch (Exception e) {
-            System.out.println("Exception: " + e.toString());
-          }
+          SecurityHelper.prepareSignatureParams(signature, credential, null, null);
+          Element element = marshallerFactory.getMarshaller(authnRequest).marshall(authnRequest);
+          String unsignedAuthnRequestString = XMLHelper.nodeToString(element);
 
+	  Signer.signObject(signature);
+          String originalAuthnRequestString = XMLHelper.nodeToString(element);
+
+	  System.out.println("Unsigned AuthnRequest: " + unsignedAuthnRequestString);
+          System.out.println("AuthnRequest String: " + originalAuthnRequestString);
 
           assertTrue(true);
-         
+     }
+
+     public void testRequestBinding_Redirect() throws Exception
+     {
+          DateTime now = new DateTime();
+
+          MarshallerFactory marshallerFactory = Configuration.getMarshallerFactory();
+
+          // AuthnRequest
+          AuthnRequest authnRequest = (AuthnRequest) buildObject(AuthnRequest.DEFAULT_ELEMENT_NAME);
+
+          // Scoping
+          Scoping scoping = (Scoping) buildObject(Scoping.DEFAULT_ELEMENT_NAME);
+
+          // .. IDPList
+          IDPList idpList = (IDPList) buildObject(IDPList.DEFAULT_ELEMENT_NAME);
+          
+          // .. IDPEntry
+	  IDPEntry idpEntry = (IDPEntry) buildObject(IDPEntry.DEFAULT_ELEMENT_NAME);
+          idpEntry.setName("account.htc.com");
+          idpEntry.setProviderID("account.htc.com");
+
+          idpList.getIDPEntrys().add(idpEntry);
+          scoping.setIDPList(idpList);
+            
+          // Issuer
+          Issuer issuer = (Issuer) buildObject(Issuer.DEFAULT_ELEMENT_NAME);
+          issuer.setValue("https://account.htc.com/service/saml2/");
+	 
+          authnRequest.setID(UUID.randomUUID().toString());
+          authnRequest.setVersion(SAMLVersion.VERSION_20);
+          authnRequest.setIssuer(issuer);
+          authnRequest.setIsPassive(true);
+          authnRequest.setProviderName("support.htc.com");
+          authnRequest.setScoping(scoping);
+          authnRequest.setProtocolBinding("urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST");
+
+	  Endpoint samlEndpoint = (Endpoint) buildObject(AssertionConsumerService.DEFAULT_ELEMENT_NAME);
+	  samlEndpoint.setLocation("http://example.org");
+	  samlEndpoint.setResponseLocation("http://example.org/response");
+
+          MockHttpServletResponse response = new MockHttpServletResponse();
+	  HttpServletResponseAdapter outTransport = new HttpServletResponseAdapter(response, false);
+
+	  BasicSAMLMessageContext messageContext = new BasicSAMLMessageContext();
+	  messageContext.setOutboundMessageTransport(outTransport);
+	  messageContext.setOutboundSAMLMessage(authnRequest);
+	  messageContext.setPeerEntityEndpoint(samlEndpoint);
+	  messageContext.setRelayState("relay");
+
+          // generate key-pair for signing
+          KeyPair keyPair = SecurityTestHelper.generateKeyPair("RSA", 2048, null);
+
+	  // generate credential
+          Credential credential = SecurityHelper.getSimpleCredential(keyPair.getPublic(), keyPair.getPrivate());
+
+	  messageContext.setOutboundSAMLMessageSigningCredential(credential);
+
+	  HTTPRedirectDeflateEncoder encoder = new HTTPRedirectDeflateEncoder();
+	  encoder.encode(messageContext);
+
+	  String queryString = new URL(response.getRedirectedUrl()).getQuery();
+
+	  System.out.println("Redirect-binding: " + queryString);
+
+	  assertNotNull("Signature parameter was not found",
+	      HTTPTransportUtils.getRawQueryStringParameter(queryString, "Signature"));
+	  assertNotNull("SigAlg parameter was not found",
+	      HTTPTransportUtils.getRawQueryStringParameter(queryString, "SigAlg"));
      }
 
      public void testAssertion()
@@ -214,38 +295,32 @@ public class AppTest
           XMLObjectBuilderFactory builderFactory = Configuration.getBuilderFactory();
 
           // NameIdentifier
-          SAMLObjectBuilder nameIdBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(NameID.DEFAULT_ELEMENT_NAME);
-          NameID nameId = (NameID) nameIdBuilder.buildObject();
+          NameID nameId = (NameID) buildObject(NameID.DEFAULT_ELEMENT_NAME);
           nameId.setValue(accountId);
           nameId.setNameQualifier("account.htc.com");
           nameId.setFormat(NameID.UNSPECIFIED);
 
           // SubjectConfirmation
-          SAMLObjectBuilder confirmationBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(SubjectConfirmationData.DEFAULT_ELEMENT_NAME);
-          SubjectConfirmationData confirmationMethod = (SubjectConfirmationData) confirmationBuilder.buildObject();
+          SubjectConfirmationData confirmationMethod = (SubjectConfirmationData) buildObject(SubjectConfirmationData.DEFAULT_ELEMENT_NAME);
           confirmationMethod.setNotBefore(now);
           confirmationMethod.setNotOnOrAfter(now.plusMinutes(1));
 
-          SAMLObjectBuilder subjectConfirmationBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(SubjectConfirmation.DEFAULT_ELEMENT_NAME);
-          SubjectConfirmation subjectConfirmation = (SubjectConfirmation) subjectConfirmationBuilder.buildObject();
+          SubjectConfirmation subjectConfirmation = (SubjectConfirmation) buildObject(SubjectConfirmation.DEFAULT_ELEMENT_NAME);
           subjectConfirmation.setSubjectConfirmationData(confirmationMethod);
 
           // Subject
-          SAMLObjectBuilder subjectBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(Subject.DEFAULT_ELEMENT_NAME);
-          Subject subject = (Subject) subjectBuilder.buildObject();
+          Subject subject = (Subject) buildObject(Subject.DEFAULT_ELEMENT_NAME);
           subject.setNameID(nameId);
           subject.getSubjectConfirmations().add(subjectConfirmation);
 
           // Authentication Statement
-          SAMLObjectBuilder authStatementBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(AuthnStatement.DEFAULT_ELEMENT_NAME);
-          AuthnStatement authnStatement = (AuthnStatement) authStatementBuilder.buildObject();
+          AuthnStatement authnStatement = (AuthnStatement) buildObject(AuthnStatement.DEFAULT_ELEMENT_NAME);
 
           // .. Authentication Context
-          SAMLObjectBuilder authContextBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(AuthnContext.DEFAULT_ELEMENT_NAME); 
-          AuthnContext authnContext = (AuthnContext) authContextBuilder.buildObject();
-          // .. .. Authentication Context Class
-          SAMLObjectBuilder authContextClassRefBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(AuthnContextClassRef.DEFAULT_ELEMENT_NAME);
-          AuthnContextClassRef authnContextClassRef = (AuthnContextClassRef) authContextClassRefBuilder.buildObject();
+          AuthnContext authnContext = (AuthnContext) buildObject(AuthnContext.DEFAULT_ELEMENT_NAME);
+
+	  // .. .. Authentication Context Class
+          AuthnContextClassRef authnContextClassRef = (AuthnContextClassRef) buildObject(AuthnContextClassRef.DEFAULT_ELEMENT_NAME);
           authnContextClassRef.setAuthnContextClassRef("urn:oasis:names:tc:SAML:2.0:ac:classes:Password");
 
           authnContext.setAuthnContextClassRef(authnContextClassRef);
@@ -256,8 +331,7 @@ public class AppTest
           authnStatement.setAuthnContext(authnContext);
 
           // Attributes Statement
-          SAMLObjectBuilder attrStatementBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(AttributeStatement.DEFAULT_ELEMENT_NAME);
-          AttributeStatement attrStatement = (AttributeStatement) attrStatementBuilder.buildObject();
+          AttributeStatement attrStatement = (AttributeStatement) buildObject(AttributeStatement.DEFAULT_ELEMENT_NAME);
 
           SAMLObjectBuilder attrBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(Attribute.DEFAULT_ELEMENT_NAME);
           XMLObjectBuilder stringBuilder = builderFactory.getBuilder(XSString.TYPE_NAME);
@@ -323,23 +397,19 @@ public class AppTest
           }
          
           // Conditions
-          SAMLObjectBuilder conditionsBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(Conditions.DEFAULT_ELEMENT_NAME);
-          Conditions conditions = (Conditions) conditionsBuilder.buildObject();
+          Conditions conditions = (Conditions) buildObject(Conditions.DEFAULT_ELEMENT_NAME);
  
           // .. do-not-cache
-          SAMLObjectBuilder doNotCacheConditionBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(OneTimeUse.DEFAULT_ELEMENT_NAME);
-          Condition condition = (Condition) doNotCacheConditionBuilder.buildObject();
+          Condition condition = (Condition) buildObject(OneTimeUse.DEFAULT_ELEMENT_NAME);
 
           conditions.getConditions().add(condition);
           
           // Issuer
-          SAMLObjectBuilder issuerBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(Issuer.DEFAULT_ELEMENT_NAME);
-          Issuer issuer = (Issuer) issuerBuilder.buildObject();
+          Issuer issuer = (Issuer) buildObject(Issuer.DEFAULT_ELEMENT_NAME);
           issuer.setValue("https://account.htc.com/service/saml2/");
 
           // Assertion
-          SAMLObjectBuilder assertionBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(Assertion.DEFAULT_ELEMENT_NAME);
-          Assertion assertion = (Assertion) assertionBuilder.buildObject();
+          Assertion assertion = (Assertion) buildObject(Assertion.DEFAULT_ELEMENT_NAME);
           assertion.setVersion(SAMLVersion.VERSION_20);
           assertion.setID(assertionId);
           assertion.setIssueInstant(now);
@@ -360,16 +430,13 @@ public class AppTest
             System.out.println("Exception: " + e.toString());
           }
 
-          SAMLObjectBuilder statusCodeBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(StatusCode.DEFAULT_ELEMENT_NAME);
-          StatusCode statusCode = (StatusCode) statusCodeBuilder.buildObject();
+          StatusCode statusCode = (StatusCode) buildObject(StatusCode.DEFAULT_ELEMENT_NAME);
           statusCode.setValue(StatusCode.SUCCESS_URI); 
 
-          SAMLObjectBuilder statusBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(Status.DEFAULT_ELEMENT_NAME);
-          Status status = (Status) statusBuilder.buildObject();
+          Status status = (Status) buildObject(Status.DEFAULT_ELEMENT_NAME);
           status.setStatusCode(statusCode);
           
-          SAMLObjectBuilder responseBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(Response.DEFAULT_ELEMENT_NAME);
-          Response response = (Response) responseBuilder.buildObject();
+          Response response = (Response) buildObject(Response.DEFAULT_ELEMENT_NAME);
           response.setVersion(SAMLVersion.VERSION_20);
           response.setID(UUID.randomUUID().toString());
           response.setIssueInstant(now);
@@ -389,35 +456,202 @@ public class AppTest
           assertTrue(true);
      }
 
-/*
-     public void testMarshaller()
+     public void testAssertion_Redirect() throws Exception
      {
-        // Get the builder factory
-        XMLObjectBuilderFactory builderFactory = Configuration.getBuilderFactory();
-         
-        // Get the subject builder based on the subject element name
-        SubjectBuilder builder = (SubjectBuilder) builderFactory.getBuilder(Subject.DEFAULT_ELEMENT_NAME);
-         
-        // Create the subject
-        Subject subject = builder.buildObject();
-         
-        // Added an NameID and two SubjectConfirmation items - creation of these items is not shown
-        subject.setNameID(nameID);
-        subject.getSubjectConfirmations().add(subjectConfirmation1);
-        subject.getSubjectConfirmations().add(subjectConfirmation2);
-         
-        // Get the marshaller factory
-        MarshallerFactory marshallerFactory = Configuration.getMarshallerFactory();
-         
-        // Get the Subject marshaller
-        Marshaller marshaller = marshallerFactory.getMarshaller(subject);
-         
-        // Marshall the Subject
-        Element subjectElement = marshaller.marshall(subject);
+          String assertionId = UUID.randomUUID().toString();
+          String accountId = UUID.randomUUID().toString();
+          DateTime now = new DateTime();
 
-        System.out.println("element: " + subjectElement.class.toString() );
-        assertTrue(true);
-    }
-*/
+          XMLObjectBuilderFactory builderFactory = Configuration.getBuilderFactory();
+
+          // NameIdentifier
+          NameID nameId = (NameID) buildObject(NameID.DEFAULT_ELEMENT_NAME);
+          nameId.setValue(accountId);
+          nameId.setNameQualifier("account.htc.com");
+          nameId.setFormat(NameID.UNSPECIFIED);
+
+          // SubjectConfirmation
+          SubjectConfirmationData confirmationMethod = (SubjectConfirmationData) buildObject(SubjectConfirmationData.DEFAULT_ELEMENT_NAME);
+          confirmationMethod.setNotBefore(now);
+          confirmationMethod.setNotOnOrAfter(now.plusMinutes(1));
+
+          SubjectConfirmation subjectConfirmation = (SubjectConfirmation) buildObject(SubjectConfirmation.DEFAULT_ELEMENT_NAME);
+          subjectConfirmation.setSubjectConfirmationData(confirmationMethod);
+
+          // Subject
+          Subject subject = (Subject) buildObject(Subject.DEFAULT_ELEMENT_NAME);
+          subject.setNameID(nameId);
+          subject.getSubjectConfirmations().add(subjectConfirmation);
+
+          // Authentication Statement
+          AuthnStatement authnStatement = (AuthnStatement) buildObject(AuthnStatement.DEFAULT_ELEMENT_NAME);
+
+          // .. Authentication Context
+          AuthnContext authnContext = (AuthnContext) buildObject(AuthnContext.DEFAULT_ELEMENT_NAME);
+
+	  // .. .. Authentication Context Class
+          AuthnContextClassRef authnContextClassRef = (AuthnContextClassRef) buildObject(AuthnContextClassRef.DEFAULT_ELEMENT_NAME);
+          authnContextClassRef.setAuthnContextClassRef("urn:oasis:names:tc:SAML:2.0:ac:classes:Password");
+
+          authnContext.setAuthnContextClassRef(authnContextClassRef);
+
+          authnStatement.setAuthnInstant(now);
+          authnStatement.setSessionIndex(UUID.randomUUID().toString());
+          authnStatement.setSessionNotOnOrAfter(now.plus(60));
+          authnStatement.setAuthnContext(authnContext);
+
+          // Attributes Statement
+          AttributeStatement attrStatement = (AttributeStatement) buildObject(AttributeStatement.DEFAULT_ELEMENT_NAME);
+
+          SAMLObjectBuilder attrBuilder = (SAMLObjectBuilder) builderFactory.getBuilder(Attribute.DEFAULT_ELEMENT_NAME);
+          XMLObjectBuilder stringBuilder = builderFactory.getBuilder(XSString.TYPE_NAME);
+
+          // .. EmailAddress
+          {
+              Attribute attr = (Attribute) attrBuilder.buildObject();
+              attr.setName("EmailAddress");
+
+              XSString value = (XSString) stringBuilder.buildObject(AttributeValue.DEFAULT_ELEMENT_NAME, XSString.TYPE_NAME);
+              value.setValue("alice_smith@mail.server");
+
+              attr.getAttributeValues().add(value);
+              attrStatement.getAttributes().add(attr);
+          }
+
+          // .. FirstName
+          {
+              Attribute attr = (Attribute) attrBuilder.buildObject();
+              attr.setName("FirstName");
+
+              XSString value = (XSString) stringBuilder.buildObject(AttributeValue.DEFAULT_ELEMENT_NAME, XSString.TYPE_NAME);
+              value.setValue("Alice");
+
+              attr.getAttributeValues().add(value);
+              attrStatement.getAttributes().add(attr);
+          }
+
+          // .. LastName
+          {
+              Attribute attr = (Attribute) attrBuilder.buildObject();
+              attr.setName("LastName");
+
+              XSString value = (XSString) stringBuilder.buildObject(AttributeValue.DEFAULT_ELEMENT_NAME, XSString.TYPE_NAME);
+              value.setValue("Smith");
+
+              attr.getAttributeValues().add(value);
+              attrStatement.getAttributes().add(attr);
+          }
+         
+          // .. Country
+          {
+              Attribute attr = (Attribute) attrBuilder.buildObject();
+              attr.setName("Country");
+
+              XSString value = (XSString) stringBuilder.buildObject(AttributeValue.DEFAULT_ELEMENT_NAME, XSString.TYPE_NAME);
+              value.setValue("US");
+
+              attr.getAttributeValues().add(value);
+              attrStatement.getAttributes().add(attr);
+          }
+         
+          // .. Language
+          {
+              Attribute attr = (Attribute) attrBuilder.buildObject();
+              attr.setName("Language");
+
+              XSString value = (XSString) stringBuilder.buildObject(AttributeValue.DEFAULT_ELEMENT_NAME, XSString.TYPE_NAME);
+              value.setValue("en_US");
+
+              attr.getAttributeValues().add(value);
+              attrStatement.getAttributes().add(attr);
+          }
+         
+          // Conditions
+          Conditions conditions = (Conditions) buildObject(Conditions.DEFAULT_ELEMENT_NAME);
+ 
+          // .. do-not-cache
+          Condition condition = (Condition) buildObject(OneTimeUse.DEFAULT_ELEMENT_NAME);
+
+          conditions.getConditions().add(condition);
+          
+          // Issuer
+          Issuer issuer = (Issuer) buildObject(Issuer.DEFAULT_ELEMENT_NAME);
+          issuer.setValue("https://account.htc.com/service/saml2/");
+
+          // Assertion
+          Assertion assertion = (Assertion) buildObject(Assertion.DEFAULT_ELEMENT_NAME);
+          assertion.setVersion(SAMLVersion.VERSION_20);
+          assertion.setID(assertionId);
+          assertion.setIssueInstant(now);
+
+          assertion.setSubject(subject);
+          assertion.setIssuer(issuer);
+          assertion.getAuthnStatements().add(authnStatement);
+          assertion.getAttributeStatements().add(attrStatement);
+          assertion.setConditions(conditions);
+
+	  {
+            AssertionMarshaller marshaller = new AssertionMarshaller();
+            Element plaintextElement = marshaller.marshall(assertion);
+            String originalAssertionString = XMLHelper.nodeToString(plaintextElement);
+            System.out.println("Assertion String: " + originalAssertionString);
+	  }
+
+          StatusCode statusCode = (StatusCode) buildObject(StatusCode.DEFAULT_ELEMENT_NAME);
+          statusCode.setValue(StatusCode.SUCCESS_URI); 
+
+          Status status = (Status) buildObject(Status.DEFAULT_ELEMENT_NAME);
+          status.setStatusCode(statusCode);
+
+
+
+          Response response = (Response) buildObject(Response.DEFAULT_ELEMENT_NAME);
+          response.setVersion(SAMLVersion.VERSION_20);
+          response.setID(UUID.randomUUID().toString());
+          response.setIssueInstant(now);
+          
+          response.setStatus(status);
+          response.getAssertions().add(assertion);
+
+	  {
+            ResponseMarshaller marshaller = new ResponseMarshaller();
+            Element plaintextElement = marshaller.marshall(response);
+            String serialized = XMLHelper.nodeToString(plaintextElement);
+            System.out.println("Assertion Response String: " + serialized);
+	  }
+
+	  Endpoint samlEndpoint = (Endpoint) buildObject(AssertionConsumerService.DEFAULT_ELEMENT_NAME);
+	  samlEndpoint.setLocation("http://example.org");
+	  samlEndpoint.setResponseLocation("http://example.org/response");
+
+          MockHttpServletResponse samlp_response = new MockHttpServletResponse();
+	  HttpServletResponseAdapter outTransport = new HttpServletResponseAdapter(samlp_response, false);
+
+	  BasicSAMLMessageContext messageContext = new BasicSAMLMessageContext();
+	  messageContext.setOutboundMessageTransport(outTransport);
+	  messageContext.setOutboundSAMLMessage(response);
+	  messageContext.setPeerEntityEndpoint(samlEndpoint);
+	  messageContext.setRelayState("relay");
+
+          // generate key-pair for signing
+          KeyPair keyPair = SecurityTestHelper.generateKeyPair("RSA", 2048, null);
+
+	  // generate credential
+          Credential credential = SecurityHelper.getSimpleCredential(keyPair.getPublic(), keyPair.getPrivate());
+
+	  messageContext.setOutboundSAMLMessageSigningCredential(credential);
+
+	  HTTPRedirectDeflateEncoder encoder = new HTTPRedirectDeflateEncoder();
+	  encoder.encode(messageContext);
+
+	  String queryString = new URL(samlp_response.getRedirectedUrl()).getQuery();
+
+	  System.out.println("Redirect-binding: " + queryString);
+
+	  assertNotNull("Signature parameter was not found",
+	      HTTPTransportUtils.getRawQueryStringParameter(queryString, "Signature"));
+	  assertNotNull("SigAlg parameter was not found",
+	      HTTPTransportUtils.getRawQueryStringParameter(queryString, "SigAlg"));
+     }
 
 }
