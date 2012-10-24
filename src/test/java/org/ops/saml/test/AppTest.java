@@ -71,9 +71,6 @@ import org.opensaml.saml2.core.impl.AssertionMarshaller;
 import org.opensaml.saml2.core.impl.AuthnRequestMarshaller;
 import org.opensaml.saml2.core.impl.ResponseMarshaller;
 
-import org.opensaml.saml2.encryption.Encrypter;
-import org.opensaml.saml2.encryption.Encrypter.KeyPlacement;;
-
 import org.opensaml.xml.ConfigurationException;
 import org.opensaml.xml.XMLObjectBuilder;
 import org.opensaml.xml.XMLObjectBuilderFactory;
@@ -96,6 +93,9 @@ import org.opensaml.xml.encryption.EncryptionConstants;
 import org.opensaml.xml.encryption.EncryptionException;
 import org.opensaml.xml.encryption.EncryptionParameters;
 import org.opensaml.xml.encryption.KeyEncryptionParameters;
+import org.opensaml.saml2.encryption.Encrypter;
+import org.opensaml.saml2.encryption.Encrypter.KeyPlacement;;
+
 
 import org.w3c.dom.*;
 import org.w3c.dom.Element;
